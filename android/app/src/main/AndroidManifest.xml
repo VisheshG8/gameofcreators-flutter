@@ -48,6 +48,24 @@
                       android:host="www.gameofcreators.com"
                       android:pathPrefix="/auth/callback"/>
             </intent-filter>
+            <!-- Mobile-specific Google Auth callback -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="www.gameofcreators.com"
+                      android:pathPrefix="/mobile/auth/callback"/>
+            </intent-filter>
+            <!-- Mobile-specific YouTube callback -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="www.gameofcreators.com"
+                      android:pathPrefix="/mobile/youtube/callback"/>
+            </intent-filter>
             <!-- Custom URL scheme for OAuth callbacks-->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
