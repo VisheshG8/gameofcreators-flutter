@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
 
-/// Custom loading widget with branded styling
 class LoadingWidget extends StatelessWidget {
   final String? message;
   final double? progress;
 
-  const LoadingWidget({
-    super.key,
-    this.message,
-    this.progress,
-  });
+  const LoadingWidget({super.key, this.message, this.progress});
 
   @override
   Widget build(BuildContext context) {
@@ -75,16 +70,11 @@ class LoadingWidget extends StatelessWidget {
   }
 }
 
-/// Simple circular progress indicator for inline loading
 class InlineLoadingWidget extends StatelessWidget {
   final Color? color;
   final double? size;
 
-  const InlineLoadingWidget({
-    super.key,
-    this.color,
-    this.size,
-  });
+  const InlineLoadingWidget({super.key, this.color, this.size});
 
   @override
   Widget build(BuildContext context) {

@@ -362,10 +362,6 @@ To add custom app icons:
 3. Upload to App Store Connect via Xcode or Transporter
 4. Complete App Store listing and submit for review
 
-## License
-
-This project is a mobile wrapper for the Game of Creators website. Please ensure you have proper authorization to create and distribute this application.
-
 ## Support
 
 For issues or questions:
@@ -392,7 +388,3 @@ For issues or questions:
 - Social sharing integration
 - Analytics integration
 - In-app updates
-
----
-
-**Built with Flutter** 💙 | **Powered by Game of Creators** 🎮

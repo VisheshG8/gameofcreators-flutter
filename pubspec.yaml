@@ -2,7 +2,7 @@ name: game_of_creator_mobile
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -46,6 +46,14 @@ dependencies:
   # URL launcher for external links
   url_launcher: ^6.3.1
 
+  # Deep linking for OAuth callbacks
+  app_links: ^6.3.2
+
+  # File picker for WebView uploads
+  image_picker: ^1.1.2
+  file_picker: ^8.1.6
+  permission_handler: ^11.3.1
+
   # For system UI customization
   flutter_native_splash: ^2.4.2
 
@@ -68,7 +76,6 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
@@ -76,7 +83,7 @@ flutter:
 
   # App assets
   assets:
-    - assets/logo.svg
+    - assets/logo.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

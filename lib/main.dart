@@ -4,10 +4,7 @@ import 'screens/splash_screen.dart';
 import 'constants/app_constants.dart';
 
 void main() {
-  // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Set preferred orientations (portrait mode)
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import '../constants/app_constants.dart';
 import 'webview_screen.dart';
 
-/// Splash screen with animated branding matching the design
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -22,7 +20,6 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // Set status bar style for splash screen
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -99,37 +96,7 @@ class _SplashScreenState extends State<SplashScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // SVG Logo
-                SvgPicture.asset(
-                  'assets/logo.svg',
-                  width: 200,
-                  height: 200,
-                ),
-
-                const SizedBox(height: 32),
-
-                // App name text - "GAME OF CREATORS"
-                const Text(
-                  'GAME OF',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w300,
-                    color: AppConstants.textColor,
-                    letterSpacing: 4,
-                    height: 1.2,
-                  ),
-                ),
-                const Text(
-                  'CREATORS',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w300,
-                    color: AppConstants.textColor,
-                    letterSpacing: 4,
-                    height: 1.2,
-                  ),
-                ),
+                Image.asset('assets/logo.png', width: 200, height: 200),
               ],
             ),
           ),
