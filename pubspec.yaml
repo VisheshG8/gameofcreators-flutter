@@ -60,6 +60,12 @@ dependencies:
   # SVG support
   flutter_svg: ^2.0.14
 
+  # Native Google Sign-In
+  google_sign_in: ^6.2.1
+
+  # Supabase Flutter SDK
+  supabase_flutter: ^2.5.6
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

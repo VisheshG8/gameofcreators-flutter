@@ -48,4 +48,18 @@ class AppConstants {
   // Timeouts
   static const Duration pageLoadTimeout = Duration(seconds: 30);
   static const Duration connectionTimeout = Duration(seconds: 10);
+
+  // Supabase Configuration
+  // TODO: Replace with your actual Supabase URL and anon key
+  // Get these from: https://app.supabase.com/project/_/settings/api
+  static const String supabaseUrl = 'https://rjprmbjqetxkramwbrqo.supabase.co';
+  static const String supabaseAnonKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqcHJtYmpxZXR4a3JhbXdicnFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ4NzUyMjYsImV4cCI6MjA2MDQ1MTIyNn0._jq3BVcbk-6q1g5bkjZVQqLFLU5fPd3CZyIjpMrLqvs';
+
+  // Google Sign-In Configuration
+  // TODO: Replace with your Web Client ID from Google Cloud Console
+  // This should be the Web Client ID (not Android/iOS client ID)
+  // Get it from: https://console.cloud.google.com/apis/credentials
+  static const String googleWebClientId =
+      '942484778913-sfo3qenvqmdlcu1c6sshr20dluj6p53p.apps.googleusercontent.com';
 }

@@ -9,9 +9,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import '../constants/app_constants.dart';
 import '../widgets/error_widget.dart';
 import '../widgets/loading_widget.dart';
+import '../services/auth_service.dart';
 
 class WebViewScreen extends StatefulWidget {
   final WebViewController? preloadedController;
@@ -35,6 +37,7 @@ class _WebViewScreenState extends State<WebViewScreen>
   StreamSubscription<Uri>? _linkSubscription;
   bool _authInProgress = false;
   bool _optimizationsInjected = false;
+  bool _sessionInjected = false;
 
   @override
   void initState() {
@@ -175,7 +178,9 @@ class _WebViewScreenState extends State<WebViewScreen>
     }
 
     // Handle HTTPS deep link (https://www.gameofcreators.com/auth/callback)
-    if (uri.path.contains('/auth/callback')) {
+    // OR mobile-specific path (https://www.gameofcreators.com/mobile/auth/callback)
+    if (uri.path.contains('/auth/callback') ||
+        uri.path.contains('/mobile/auth/callback')) {
       debugPrint('✅ HTTPS Google Auth callback detected - Loading in WebView');
       _webViewController.loadRequest(uri);
 
@@ -210,7 +215,9 @@ class _WebViewScreenState extends State<WebViewScreen>
     }
 
     // Handle HTTPS YouTube callback
-    if (uri.path.contains('/api/youtube/callback')) {
+    // OR mobile-specific path (https://www.gameofcreators.com/mobile/youtube/callback)
+    if (uri.path.contains('/api/youtube/callback') ||
+        uri.path.contains('/mobile/youtube/callback')) {
       debugPrint('✅ HTTPS YouTube callback detected - Loading in WebView');
       _webViewController.loadRequest(uri);
 
@@ -274,6 +281,11 @@ class _WebViewScreenState extends State<WebViewScreen>
               _isLoading = false;
             });
             _updateBackButtonState();
+
+            // Inject session only once if authenticated and on our domain
+            if (url.contains(AppConstants.websiteDomain) && !_sessionInjected) {
+              await _injectSupabaseSession();
+            }
           },
           onWebResourceError: (WebResourceError error) {
             setState(() {
@@ -282,14 +294,26 @@ class _WebViewScreenState extends State<WebViewScreen>
               _errorMessage = error.description;
             });
           },
-          onNavigationRequest: (NavigationRequest request) {
-            if (_isOAuthUrl(request.url)) {
-              _launchExternalUrl(request.url);
+          onNavigationRequest: (NavigationRequest request) async {
+            // Intercept Google OAuth URLs and trigger native authentication
+            if (_isGoogleOAuthUrl(request.url)) {
+              debugPrint(
+                '🔐 Google OAuth detected, triggering native auth: ${request.url}',
+              );
+              _handleNativeGoogleAuth();
               return NavigationDecision.prevent;
             }
 
-            // Handle external links
-            if (!request.url.contains(AppConstants.websiteDomain)) {
+            // Allow other OAuth URLs to load within webview
+            if (_isOAuthUrl(request.url)) {
+              debugPrint('✅ Allowing OAuth URL in webview: ${request.url}');
+              return NavigationDecision.navigate;
+            }
+
+            // Handle external links (but allow our own domain and OAuth callbacks)
+            if (!request.url.contains(AppConstants.websiteDomain) &&
+                !request.url.contains('/auth/callback') &&
+                !request.url.contains('/mobile/auth/callback')) {
               _launchExternalUrl(request.url);
               return NavigationDecision.prevent;
             }
@@ -301,7 +325,8 @@ class _WebViewScreenState extends State<WebViewScreen>
     // Platform-specific configurations
     if (_webViewController.platform is AndroidWebViewController) {
       AndroidWebViewController.enableDebugging(false);
-      final androidController = _webViewController.platform as AndroidWebViewController;
+      final androidController =
+          _webViewController.platform as AndroidWebViewController;
 
       androidController
         ..setMediaPlaybackRequiresUserGesture(false)
@@ -312,8 +337,12 @@ class _WebViewScreenState extends State<WebViewScreen>
         )
         ..setOnShowFileSelector(_androidFilePicker);
 
-      // Set custom User-Agent for backend platform detection
-      androidController.setUserAgent('GameOfCreators-Mobile/Android');
+      // Use a User-Agent that includes our app identifier for backend detection
+      // but maintains standard Chrome format for better Google account detection
+      // This helps Google recognize the webview and show account picker properly
+      androidController.setUserAgent(
+        'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 GameOfCreators-Mobile/Android',
+      );
 
       // Enable caching for better performance
       androidController.runJavaScript('''
@@ -324,10 +353,15 @@ class _WebViewScreenState extends State<WebViewScreen>
         }
       ''');
     } else if (_webViewController.platform is WebKitWebViewController) {
-      final iosController = _webViewController.platform as WebKitWebViewController;
+      final iosController =
+          _webViewController.platform as WebKitWebViewController;
 
-      // Set custom User-Agent for backend platform detection
-      iosController.setUserAgent('GameOfCreators-Mobile/iOS');
+      // Use a User-Agent that includes our app identifier for backend detection
+      // but maintains standard Safari format for better Google account detection
+      // This helps Google recognize the webview and show account picker properly
+      iosController.setUserAgent(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 GameOfCreators-Mobile/iOS',
+      );
 
       // iOS file picker support and optimizations
       // Enable inline media playback (already set in params)
@@ -404,6 +438,219 @@ class _WebViewScreenState extends State<WebViewScreen>
       'instagram.com/oauth',
     ];
     return oauthProviderDomains.any((domain) => url.contains(domain));
+  }
+
+  /// Check if URL is specifically a Google OAuth URL
+  bool _isGoogleOAuthUrl(String url) {
+    return url.contains('accounts.google.com') &&
+        (url.contains('/o/oauth2/') || url.contains('/signin/oauth'));
+  }
+
+  /// Handle native Google authentication when Google OAuth is detected
+  Future<void> _handleNativeGoogleAuth() async {
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Signing in with Google...'),
+            backgroundColor: AppConstants.primaryColor,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final authService = AuthService();
+      final session = await authService.signInWithGoogle();
+
+      if (session == null) {
+        // User cancelled
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Sign-in cancelled'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      debugPrint('✅ Native Google auth successful');
+      final accessTokenPreview = session.accessToken.length > 20
+          ? '${session.accessToken.substring(0, 20)}...'
+          : session.accessToken;
+      debugPrint('📝 Access Token: $accessTokenPreview');
+
+      if (session.refreshToken != null) {
+        final refreshTokenPreview = session.refreshToken!.length > 20
+            ? '${session.refreshToken!.substring(0, 20)}...'
+            : session.refreshToken!;
+        debugPrint('🔄 Refresh Token: $refreshTokenPreview');
+      }
+
+      // Reset the flag to allow injection after auth
+      _sessionInjected = false;
+
+      // Inject session into WebView
+      await _injectSupabaseSession();
+
+      // Don't navigate here - let the JavaScript bridge handle navigation
+      // It will check the user profile and navigate to /dashboard or /choose-username
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully signed in!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Native Google auth failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sign-in failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Inject Supabase session into WebView via JavaScript
+  Future<void> _injectSupabaseSession() async {
+    try {
+      final authService = AuthService();
+      final session = authService.getCurrentSession();
+
+      if (session == null || session.isExpired) {
+        debugPrint('⚠️ No valid session to inject');
+        return;
+      }
+
+      // Mark as injected to prevent loops
+      _sessionInjected = true;
+
+      debugPrint('💉 Injecting Supabase session into WebView');
+
+      // Method 1: JavaScript injection to set session
+      // Use the mobile-auth-bridge.js function if available, otherwise set cookies directly
+      final jsCode =
+          '''
+        (function() {
+          try {
+            const accessToken = '${session.accessToken}';
+            const refreshToken = '${session.refreshToken ?? ''}';
+            
+            // Try to use the mobile auth bridge function if available
+            if (typeof window.setSupabaseSessionFromMobile === 'function') {
+              console.log('📱 Using mobile auth bridge to set session');
+              window.setSupabaseSessionFromMobile(accessToken, refreshToken).then(() => {
+                console.log('✅ Session set, triggering auth state update');
+                // Trigger a custom event that the website can listen to
+                window.dispatchEvent(new CustomEvent('mobile-auth-complete', {
+                  detail: { success: true }
+                }));
+                // Give the website a moment to process, then reload
+                setTimeout(() => {
+                  window.location.href = window.location.origin;
+                }, 500);
+              });
+            } else {
+              // Fallback: Set cookies directly (Supabase SSR will pick them up)
+              console.log('🍪 Setting Supabase cookies directly');
+              const domain = window.location.hostname;
+              const expires = new Date();
+              expires.setTime(expires.getTime() + 60 * 60 * 1000); // 1 hour
+              
+              // Set access token cookie
+              document.cookie = 'sb-access-token=' + accessToken + '; domain=' + domain + '; path=/; expires=' + expires.toUTCString() + '; SameSite=Lax; Secure';
+              
+              // Set refresh token cookie
+              if (refreshToken) {
+                document.cookie = 'sb-refresh-token=' + refreshToken + '; domain=' + domain + '; path=/; expires=' + expires.toUTCString() + '; SameSite=Lax; Secure';
+              }
+              
+              // Also try to set session via Supabase client if available
+              if (typeof window.supabase !== 'undefined' && window.supabase.auth) {
+                window.supabase.auth.setSession({
+                  access_token: accessToken,
+                  refresh_token: refreshToken
+                }).then(() => {
+                  console.log('✅ Supabase session set via client');
+                  // Reload to pick up the new auth state
+                  setTimeout(() => {
+                    window.location.href = window.location.origin;
+                  }, 500);
+                }).catch((error) => {
+                  console.error('❌ Failed to set session via client:', error);
+                  // Reload anyway to pick up cookies
+                  setTimeout(() => {
+                    window.location.href = window.location.origin;
+                  }, 500);
+                });
+              } else {
+                // No Supabase client, just reload to pick up cookies
+                setTimeout(() => {
+                  window.location.href = window.location.origin;
+                }, 500);
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error injecting Supabase session:', error);
+          }
+        })();
+      ''';
+
+      await _webViewController.runJavaScript(jsCode);
+
+      // Method 2: Also set cookies as a fallback
+      await _setSupabaseCookies(
+        session.accessToken,
+        session.refreshToken ?? '',
+      );
+    } catch (e) {
+      debugPrint('❌ Error injecting session: $e');
+    }
+  }
+
+  /// Set Supabase authentication cookies in WebView
+  Future<void> _setSupabaseCookies(
+    String accessToken,
+    String refreshToken,
+  ) async {
+    try {
+      final cookieManager = WebViewCookieManager();
+
+      // Set access token cookie
+      await cookieManager.setCookie(
+        WebViewCookie(
+          name: 'sb-access-token',
+          value: accessToken,
+          domain: AppConstants.websiteDomain,
+          path: '/',
+        ),
+      );
+
+      // Set refresh token cookie if available
+      if (refreshToken.isNotEmpty) {
+        await cookieManager.setCookie(
+          WebViewCookie(
+            name: 'sb-refresh-token',
+            value: refreshToken,
+            domain: AppConstants.websiteDomain,
+            path: '/',
+          ),
+        );
+      }
+
+      debugPrint('✅ Supabase cookies set');
+    } catch (e) {
+      debugPrint('❌ Error setting cookies: $e');
+    }
   }
 
   /// Check internet connectivity
@@ -523,20 +770,13 @@ class _WebViewScreenState extends State<WebViewScreen>
     try {
       final uri = Uri.parse(url);
 
-      // Mark that authentication is in progress
-      if (_isOAuthUrl(url)) {
-        _authInProgress = true;
-      }
-
       // Show instructions to the user
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
-              'Opening browser for authentication...\nReturn to app after signing in',
-            ),
+            content: const Text('Opening external link...'),
             backgroundColor: AppConstants.primaryColor,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -551,7 +791,6 @@ class _WebViewScreenState extends State<WebViewScreen>
         await launchUrl(uri, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
-      _authInProgress = false;
       // If launching fails, show a snackbar to the user
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
