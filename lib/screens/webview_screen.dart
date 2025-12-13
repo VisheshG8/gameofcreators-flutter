@@ -109,7 +109,7 @@ class _WebViewScreenState extends State<WebViewScreen>
     if (uri.scheme == 'gameofcreators' &&
         uri.host == 'auth' &&
         uri.path.contains('/callback')) {
-      debugPrint('✅ Custom scheme callback detected');
+      debugPrint('✅ Custom scheme Google Auth callback detected');
 
       final httpsUrl =
           'https://www.gameofcreators.com/auth/callback?${uri.query}';
@@ -128,9 +128,55 @@ class _WebViewScreenState extends State<WebViewScreen>
       return;
     }
 
+    // Handle Instagram callback (gameofcreators://instagram/callback)
+    if (uri.scheme == 'gameofcreators' &&
+        uri.host == 'instagram' &&
+        uri.path.contains('/callback')) {
+      debugPrint('✅ Custom scheme Instagram callback detected');
+
+      final httpsUrl =
+          'https://www.gameofcreators.com/api/instagram/callback?${uri.query}';
+      debugPrint('📍 Loading HTTPS URL: $httpsUrl');
+      _webViewController.loadRequest(Uri.parse(httpsUrl));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connecting Instagram account...'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Handle YouTube callback (gameofcreators://youtube/callback)
+    if (uri.scheme == 'gameofcreators' &&
+        uri.host == 'youtube' &&
+        uri.path.contains('/callback')) {
+      debugPrint('✅ Custom scheme YouTube callback detected');
+
+      final httpsUrl =
+          'https://www.gameofcreators.com/api/youtube/callback?${uri.query}';
+      debugPrint('📍 Loading HTTPS URL: $httpsUrl');
+      _webViewController.loadRequest(Uri.parse(httpsUrl));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connecting YouTube account...'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      return;
+    }
+
     // Handle HTTPS deep link (https://www.gameofcreators.com/auth/callback)
     if (uri.path.contains('/auth/callback')) {
-      debugPrint('✅ HTTPS callback detected - Loading in WebView');
+      debugPrint('✅ HTTPS Google Auth callback detected - Loading in WebView');
       _webViewController.loadRequest(uri);
 
       // Show user feedback
@@ -143,9 +189,44 @@ class _WebViewScreenState extends State<WebViewScreen>
           ),
         );
       }
-    } else {
-      debugPrint('❌ Not a callback URL');
+      return;
     }
+
+    // Handle HTTPS Instagram callback
+    if (uri.path.contains('/api/instagram/callback')) {
+      debugPrint('✅ HTTPS Instagram callback detected - Loading in WebView');
+      _webViewController.loadRequest(uri);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connecting Instagram account...'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Handle HTTPS YouTube callback
+    if (uri.path.contains('/api/youtube/callback')) {
+      debugPrint('✅ HTTPS YouTube callback detected - Loading in WebView');
+      _webViewController.loadRequest(uri);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connecting YouTube account...'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      return;
+    }
+
+    debugPrint('❌ Not a recognized callback URL');
   }
 
   void _initializeWebView() {
@@ -231,6 +312,9 @@ class _WebViewScreenState extends State<WebViewScreen>
         )
         ..setOnShowFileSelector(_androidFilePicker);
 
+      // Set custom User-Agent for backend platform detection
+      androidController.setUserAgent('GameOfCreators-Mobile/Android');
+
       // Enable caching for better performance
       androidController.runJavaScript('''
         if (window.applicationCache) {
@@ -240,6 +324,11 @@ class _WebViewScreenState extends State<WebViewScreen>
         }
       ''');
     } else if (_webViewController.platform is WebKitWebViewController) {
+      final iosController = _webViewController.platform as WebKitWebViewController;
+
+      // Set custom User-Agent for backend platform detection
+      iosController.setUserAgent('GameOfCreators-Mobile/iOS');
+
       // iOS file picker support and optimizations
       // Enable inline media playback (already set in params)
       // iOS WebView handles caching automatically
@@ -310,6 +399,9 @@ class _WebViewScreenState extends State<WebViewScreen>
       'twitter.com/i/oauth',
       'discord.com/oauth2',
       'discord.com/api/oauth2',
+      'api.instagram.com/oauth',
+      'www.instagram.com/oauth',
+      'instagram.com/oauth',
     ];
     return oauthProviderDomains.any((domain) => url.contains(domain));
   }

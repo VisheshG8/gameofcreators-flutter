@@ -57,6 +57,42 @@
                       android:host="auth"
                       android:pathPrefix="/callback"/>
             </intent-filter>
+            <!-- Instagram OAuth callback deep link-->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="www.gameofcreators.com"
+                      android:pathPrefix="/api/instagram/callback"/>
+            </intent-filter>
+            <!-- Instagram OAuth callback  -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="gameofcreators"
+                      android:host="instagram"
+                      android:pathPrefix="/callback"/>
+            </intent-filter>
+            <!-- YouTube OAuth callback deep link -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="www.gameofcreators.com"
+                      android:pathPrefix="/api/youtube/callback"/>
+            </intent-filter>
+            <!-- YouTube OAuth callback  -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="gameofcreators"
+                      android:host="youtube"
+                      android:pathPrefix="/callback"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
