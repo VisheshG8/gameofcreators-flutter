@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import 'package:image_picker/image_picker.dart';
@@ -38,13 +37,15 @@ class _WebViewScreenState extends State<WebViewScreen>
   bool _authInProgress = false;
   bool _optimizationsInjected = false;
   bool _sessionInjected = false;
+  bool _youtubeOAuthInProgress = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeWebView();
-    _checkConnectivity();
+    // Don't check connectivity on init - let WebView handle it
+    // _checkConnectivity() removed - causes false positives
     _initDeepLinks();
 
     // Set status bar style
@@ -184,7 +185,7 @@ class _WebViewScreenState extends State<WebViewScreen>
       debugPrint('✅ HTTPS Google Auth callback detected - Loading in WebView');
       _webViewController.loadRequest(uri);
 
-      // Show user feedback
+      // Show user feedback cha-cha Ne call kar
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -282,26 +283,91 @@ class _WebViewScreenState extends State<WebViewScreen>
             });
             _updateBackButtonState();
 
+            // Don't interfere with myaccount.google.com - Google may redirect here
+            // as an intermediate step before showing the consent screen.
+            // Just wait for the actual consent screen or callback.
+            if (url.contains('myaccount.google.com') &&
+                _youtubeOAuthInProgress) {
+              debugPrint(
+                '⚠️ On myaccount.google.com during YouTube OAuth - waiting for consent screen or callback',
+              );
+              // Don't do anything - let Google handle the flow
+              // The consent screen should appear next, or Google will redirect to callback
+            }
+
             // Inject session only once if authenticated and on our domain
             if (url.contains(AppConstants.websiteDomain) && !_sessionInjected) {
               await _injectSupabaseSession();
             }
           },
           onWebResourceError: (WebResourceError error) {
-            setState(() {
-              _hasError = true;
-              _isLoading = false;
-              _errorMessage = error.description;
-            });
+            // Only show error for main frame failures (not sub-resources like images, ads, etc.)
+            // This prevents false positives from minor resource load failures
+            if (error.isForMainFrame ?? true) {
+              debugPrint('❌ Main frame error: ${error.description}');
+              setState(() {
+                _hasError = true;
+                _isLoading = false;
+                _errorMessage = error.description;
+              });
+            } else {
+              // Log sub-resource errors but don't show error screen
+              debugPrint(
+                '⚠️ Sub-resource error (ignored): ${error.description}',
+              );
+            }
           },
           onNavigationRequest: (NavigationRequest request) async {
+            // Detect YouTube OAuth flow start
+            if (request.url.contains('/api/youtube/auth')) {
+              _youtubeOAuthInProgress = true;
+              debugPrint('📺 YouTube OAuth flow started');
+            }
+
+            // Detect YouTube OAuth URLs by checking for YouTube scope or callback
+            final uri = Uri.tryParse(request.url);
+            if (uri != null) {
+              final scope = uri.queryParameters['scope'] ?? '';
+              final redirectUri = uri.queryParameters['redirect_uri'] ?? '';
+              if (scope.contains('youtube') ||
+                  scope.contains('googleapis.com/auth/youtube') ||
+                  redirectUri.contains('youtube/callback')) {
+                _youtubeOAuthInProgress = true;
+                debugPrint('📺 YouTube OAuth URL detected');
+              }
+            }
+
+            // IMPORTANT: Don't intercept Google OAuth if we're in YouTube OAuth flow
+            // Google uses intermediate URLs like /signin/oauth/delegation that don't
+            // have YouTube-specific parameters, but are part of the YouTube OAuth flow
+            if (_youtubeOAuthInProgress) {
+              debugPrint(
+                '📺 YouTube OAuth in progress - allowing Google URLs to continue flow',
+              );
+              // Allow all Google URLs during YouTube OAuth (they're part of the flow)
+              if (request.url.contains('accounts.google.com') ||
+                  request.url.contains('myaccount.google.com')) {
+                return NavigationDecision.navigate;
+              }
+            }
+
             // Intercept Google OAuth URLs and trigger native authentication
-            if (_isGoogleOAuthUrl(request.url)) {
+            // BUT ONLY if we're NOT in YouTube OAuth flow
+            if (!_youtubeOAuthInProgress && _isGoogleOAuthUrl(request.url)) {
               debugPrint(
                 '🔐 Google OAuth detected, triggering native auth: ${request.url}',
               );
               _handleNativeGoogleAuth();
               return NavigationDecision.prevent;
+            }
+
+            // Allow myaccount.google.com to load - Google may show this as intermediate step
+            // before the consent screen. Don't interfere with the flow.
+            if (request.url.contains('myaccount.google.com')) {
+              debugPrint(
+                '⚠️ myaccount.google.com detected - allowing (Google may show consent screen next)',
+              );
+              return NavigationDecision.navigate;
             }
 
             // Allow other OAuth URLs to load within webview
@@ -310,10 +376,19 @@ class _WebViewScreenState extends State<WebViewScreen>
               return NavigationDecision.navigate;
             }
 
+            // Reset YouTube OAuth flag when we reach our callback or settings
+            if (request.url.contains('/mobile/youtube/callback') ||
+                request.url.contains('/api/youtube/callback') ||
+                request.url.contains('/dashboard/settings')) {
+              _youtubeOAuthInProgress = false;
+            }
+
             // Handle external links (but allow our own domain and OAuth callbacks)
             if (!request.url.contains(AppConstants.websiteDomain) &&
                 !request.url.contains('/auth/callback') &&
-                !request.url.contains('/mobile/auth/callback')) {
+                !request.url.contains('/mobile/auth/callback') &&
+                !request.url.contains('/api/youtube/callback') &&
+                !request.url.contains('/mobile/youtube/callback')) {
               _launchExternalUrl(request.url);
               return NavigationDecision.prevent;
             }
@@ -424,6 +499,7 @@ class _WebViewScreenState extends State<WebViewScreen>
   bool _isOAuthUrl(String url) {
     final oauthProviderDomains = [
       'accounts.google.com',
+      'myaccount.google.com',
       'appleid.apple.com',
       'www.facebook.com',
       'facebook.com/v',
@@ -440,10 +516,58 @@ class _WebViewScreenState extends State<WebViewScreen>
     return oauthProviderDomains.any((domain) => url.contains(domain));
   }
 
-  /// Check if URL is specifically a Google OAuth URL
+  /// Check if URL is specifically a Google OAuth URL for USER SIGN-IN
+  /// (not for third-party integrations like YouTube, Instagram, etc.)
   bool _isGoogleOAuthUrl(String url) {
-    return url.contains('accounts.google.com') &&
-        (url.contains('/o/oauth2/') || url.contains('/signin/oauth'));
+    // Only intercept if it's a Google OAuth URL AND it's coming from our auth page
+    // Exclude YouTube and other OAuth flows by checking the redirect_uri, scope, or state
+    if (!url.contains('accounts.google.com')) {
+      return false;
+    }
+
+    if (!url.contains('/o/oauth2/') && !url.contains('/signin/oauth')) {
+      return false;
+    }
+
+    // Exclude YouTube OAuth - check for youtube-related parameters in URL
+    // YouTube OAuth URLs will have:
+    // - scope parameter containing 'youtube' or 'googleapis.com/auth/youtube'
+    // - redirect_uri containing 'youtube/callback'
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      final scope = uri.queryParameters['scope'] ?? '';
+      final redirectUri = uri.queryParameters['redirect_uri'] ?? '';
+
+      // Check if this is YouTube OAuth by scope or redirect URI
+      if (scope.contains('youtube') ||
+          scope.contains('googleapis.com/auth/youtube') ||
+          redirectUri.contains('youtube/callback') ||
+          redirectUri.contains('youtube')) {
+        debugPrint(
+          '📺 YouTube OAuth detected, allowing in webview (scope: $scope, redirect: $redirectUri)',
+        );
+        return false; // Don't intercept YouTube OAuth
+      }
+    }
+
+    // Also check URL string directly as fallback
+    if (url.contains('youtube') ||
+        url.contains('googleapis.com/auth/youtube') ||
+        (url.contains('redirect_uri=') && url.contains('youtube'))) {
+      debugPrint(
+        '📺 YouTube OAuth detected (string check), allowing in webview',
+      );
+      return false;
+    }
+
+    // Exclude Instagram OAuth
+    if (url.contains('instagram') ||
+        (uri?.queryParameters['redirect_uri'] ?? '').contains('instagram')) {
+      return false;
+    }
+
+    // This is a user sign-in with Google (Supabase auth)
+    return true;
   }
 
   /// Handle native Google authentication when Google OAuth is detected
@@ -650,18 +774,6 @@ class _WebViewScreenState extends State<WebViewScreen>
       debugPrint('✅ Supabase cookies set');
     } catch (e) {
       debugPrint('❌ Error setting cookies: $e');
-    }
-  }
-
-  /// Check internet connectivity
-  Future<void> _checkConnectivity() async {
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
-      setState(() {
-        _hasError = true;
-        _isLoading = false;
-        _errorMessage = AppConstants.noInternetMessage;
-      });
     }
   }
 

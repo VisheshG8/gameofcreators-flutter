@@ -65,6 +65,7 @@ dependencies:
 
   # Supabase Flutter SDK
   supabase_flutter: ^2.5.6
+  onesignal_flutter: ^5.3.4
 
 dev_dependencies:
   flutter_test:
