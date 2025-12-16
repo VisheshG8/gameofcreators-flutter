@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.gameofcreators.mobile",
+      "sha256_cert_fingerprints": [
+        "B1:5F:1A:6D:A1:53:85:29:EA:FD:02:DC:40:45:9C:92:E5:4D:69:73:E2:F4:10:D9:F0:29:49:BF:05:AA:6B:85"
+      ]
+    }
+  }
+]

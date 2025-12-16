@@ -121,7 +121,7 @@ flutter:
 
 # Flutter Native Splash Configuration
 flutter_native_splash:
-  color: "#00000"
+  color: "#000000"
   color_dark: "#0f0f1e"
 
   android_12:
