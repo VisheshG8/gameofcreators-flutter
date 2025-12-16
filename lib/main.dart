@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:app_links/app_links.dart';
 import 'screens/splash_screen.dart';
 import 'constants/app_constants.dart';
 import 'services/auth_service.dart';
@@ -11,20 +12,42 @@ void main() async {
   // Create global navigator key for notifications
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  // Initialize Supabase
+  // 1. Initialize Services
   await AuthService.initializeSupabase();
-
-  // Initialize OneSignal with our notification service
   await NotificationService().initialize(navigatorKey: navigatorKey);
-
-  // Request notification permission
   await NotificationService().requestPermission();
 
-  // Set preferred orientations
+  // 2. Set preferred orientations
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  // 3. --- COLD START & DEEP LINK FIX ---
+  // We catch the link HERE, before the UI loads.
+  final appLinks = AppLinks();
+
+  // A. Handle Cold Start (App was closed)
+  try {
+    final Uri? initialUri = await appLinks.getInitialLink();
+    if (initialUri != null) {
+      debugPrint("🚀 Main.dart caught Cold Start Link: $initialUri");
+      // Store it in NotificationService immediately.
+      // The Service will hold it until the WebView is ready.
+      NotificationService().navigateToUrl(initialUri.toString());
+    }
+  } catch (e) {
+    debugPrint("Error checking initial link: $e");
+  }
+
+  // B. Handle Background/Foreground Links (App is running)
+  appLinks.uriLinkStream.listen((Uri? uri) {
+    if (uri != null) {
+      debugPrint("🔗 Main.dart caught Background Link: $uri");
+      NotificationService().navigateToUrl(uri.toString());
+    }
+  });
+  // -------------------------------------
 
   runApp(GameOfCreatorsApp(navigatorKey: navigatorKey));
 }

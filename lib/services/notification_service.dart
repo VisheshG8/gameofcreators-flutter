@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../models/app_notification.dart';
 
 class NotificationService {
@@ -18,6 +19,26 @@ class NotificationService {
 
   // Global key for showing snackbars from anywhere
   GlobalKey<NavigatorState>? _navigatorKey;
+
+  // WebView controller reference for navigation
+  WebViewController? _webViewController;
+
+  // Callback function for custom navigation from WebViewScreen
+  Function(String url)? _navigationCallback;
+
+  // Store pending notification URL for cold start
+  String? _pendingNotificationUrl;
+
+  /// Set the WebViewController for handling notification navigation
+  /// Call this from your WebViewScreen after initializing the controller
+  void setWebViewController(WebViewController controller, {Function(String url)? onNavigate}) {
+    _webViewController = controller;
+    _navigationCallback = onNavigate;
+    developer.log(
+      'WebViewController set for notifications',
+      name: 'NotificationService',
+    );
+  }
 
   /// Initialize OneSignal with error handling
   Future<void> initialize({GlobalKey<NavigatorState>? navigatorKey}) async {
@@ -38,11 +59,15 @@ class NotificationService {
       // Initialize OneSignal
       OneSignal.initialize(_oneSignalAppId);
 
+      // Configure OneSignal for heads-up notifications (Android)
+      // This ensures notifications appear as pop-ups like WhatsApp
+      OneSignal.Notifications.clearAll(); // Clear any old notifications
+
       // Set up notification event handlers BEFORE requesting permission
       _setupNotificationHandlers();
 
       developer.log(
-        'OneSignal initialized successfully',
+        'OneSignal initialized successfully with heads-up notification support',
         name: 'NotificationService',
       );
       _isInitialized = true;
@@ -105,6 +130,68 @@ class NotificationService {
       'Notification handlers set up successfully',
       name: 'NotificationService',
     );
+  }
+
+  /// Navigate to a URL in the webview
+  Future<void> navigateToUrl(String url) async {
+    try {
+      developer.log('Navigating webview to: $url', name: 'NotificationService');
+
+      // Parse the URL to ensure it's valid
+      final uri = Uri.tryParse(url);
+      if (uri == null) {
+        developer.log('Invalid URL: $url', name: 'NotificationService');
+        return;
+      }
+
+      // Use custom callback if available (preferred - bypasses navigation delegate)
+      if (_navigationCallback != null) {
+        developer.log('Using navigation callback', name: 'NotificationService');
+        _navigationCallback!(url);
+        return;
+      }
+
+      // Fallback to direct webview loading
+      if (_webViewController != null) {
+        developer.log('Using direct webview loading', name: 'NotificationService');
+        await _webViewController!.loadRequest(uri);
+      } else {
+        // WebView not ready yet - store URL for cold start
+        developer.log(
+          'WebViewController not set - storing URL for cold start: $url',
+          name: 'NotificationService',
+        );
+        _pendingNotificationUrl = url;
+        return;
+      }
+
+      developer.log(
+        'Successfully navigated to: $url',
+        name: 'NotificationService',
+      );
+    } catch (e, stackTrace) {
+      developer.log(
+        'Error navigating to URL',
+        name: 'NotificationService',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// Get pending notification URL (for cold start)
+  /// Call this from SplashScreen to retrieve the URL stored before WebView was ready
+  String? getPendingNotificationUrl() {
+    final url = _pendingNotificationUrl;
+    if (url != null) {
+      developer.log(
+        'Retrieved pending notification URL: $url',
+        name: 'NotificationService',
+      );
+      // Clear it after retrieval to prevent reuse
+      _pendingNotificationUrl = null;
+    }
+    return url;
   }
 
   /// Handle notification received while app is in foreground
@@ -188,7 +275,7 @@ class NotificationService {
         name: 'NotificationService',
       );
 
-      // Parse additional data for navigation (example)
+      // Parse additional data for navigation
       final additionalData = appNotification.additionalData;
       if (additionalData.isNotEmpty) {
         developer.log(
@@ -196,25 +283,45 @@ class NotificationService {
           name: 'NotificationService',
         );
 
-        // Example: Check for specific data keys
+        // Check for specific data keys
         if (additionalData.containsKey('type')) {
           final notificationType = additionalData['type'];
           developer.log(
             'Notification type: $notificationType',
             name: 'NotificationService',
           );
-
-          // TODO: Add navigation logic here based on notification type
         }
 
+        // Handle URL navigation when notification is clicked
         if (additionalData.containsKey('url')) {
-          final url = additionalData['url'];
+          final url = additionalData['url'] as String;
           developer.log(
             'Notification contains URL: $url',
             name: 'NotificationService',
           );
-          // TODO: Navigate to URL in webview
+
+          // Navigate to the URL in webview
+          navigateToUrl(url);
+
+          // Show feedback to user
+          if (_navigatorKey?.currentContext != null) {
+            final context = _navigatorKey!.currentContext!;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Opening: ${appNotification.title}'),
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
         }
+      } else {
+        // No additional data - just log that notification was clicked
+        developer.log(
+          'Notification clicked but no URL provided',
+          name: 'NotificationService',
+        );
       }
     } catch (e, stackTrace) {
       developer.log(
@@ -407,18 +514,50 @@ class MyApp extends StatelessWidget {
   }
 }
 
-2. SET USER ID AFTER LOGIN:
+2. SET WEBVIEW CONTROLLER IN WebViewScreen:
+-------------------------------
+@override
+void initState() {
+  super.initState();
+  _initializeWebView();
+}
+
+void _initializeWebView() {
+  // ... create webview controller ...
+
+  // IMPORTANT: Set the controller in NotificationService for navigation
+  // Provide a callback that sets a flag to bypass navigation delegate checks
+  NotificationService().setWebViewController(
+    _webViewController,
+    onNavigate: (String url) {
+      _pendingNotificationUrl = url; // Flag to allow this URL
+      _webViewController.loadRequest(Uri.parse(url));
+    },
+  );
+}
+
+// In your navigation delegate:
+onNavigationRequest: (NavigationRequest request) async {
+  // Allow notification URLs to bypass external link checks
+  if (_pendingNotificationUrl != null && request.url == _pendingNotificationUrl) {
+    _pendingNotificationUrl = null;
+    return NavigationDecision.navigate;
+  }
+  // ... rest of your navigation logic ...
+}
+
+3. SET USER ID AFTER LOGIN:
 -------------------------------
 // After successful login
 final userId = userResponse.id; // or email, or any unique identifier
 await NotificationService().setUserId(userId);
 
-3. LOGOUT USER:
+4. LOGOUT USER:
 -------------------------------
 // When user logs out
 await NotificationService().logoutUser();
 
-4. CHECK PERMISSION STATUS:
+5. CHECK PERMISSION STATUS:
 -------------------------------
 final hasPermission = await NotificationService().hasPermission();
 if (!hasPermission) {
@@ -426,32 +565,71 @@ if (!hasPermission) {
   await NotificationService().requestPermission();
 }
 
-5. GET DEVICE ID FOR TESTING:
+6. GET DEVICE ID FOR TESTING:
 -------------------------------
 final deviceId = await NotificationService().getDeviceId();
 print('Send test notification to: $deviceId');
 
-6. LOG NOTIFICATION STATUS:
+7. LOG NOTIFICATION STATUS:
 -------------------------------
 await NotificationService().logPermissionStatus();
 
 ===============================================================================
-TESTING NOTIFICATIONS:
+TESTING NOTIFICATIONS WITH WEBVIEW NAVIGATION:
 ===============================================================================
 
 1. Get device ID from logs or using getDeviceId()
-2. Go to OneSignal dashboard
-3. Create a new notification
+2. Go to OneSignal dashboard → Messages → New Push
+3. Create a new notification with:
+   - Title: "New Message"
+   - Body: "You have a new message waiting"
+   - Additional Data (JSON):
+     {
+       "url": "https://www.gameofcreators.com/dashboard/messages",
+       "type": "message"
+     }
 4. Under "Send to" select "Player IDs" and paste your device ID
 5. Send the notification
+6. When you click the notification, it will:
+   - Log the click event
+   - Navigate to the URL in your webview
+   - Show a snackbar confirming navigation
 
-To test with additional data (for navigation):
-Send notification with Additional Data in JSON format:
+HEADS-UP NOTIFICATION TIPS (Android):
+-------------------------------
+For notifications to appear as pop-ups (like WhatsApp):
+
+1. On OneSignal Dashboard:
+   - Set "Priority" to HIGH when creating notification
+   - Set "Android Channel ID" to your channel (OneSignal creates default)
+
+2. On Device Settings:
+   - Go to Settings → Apps → Your App → Notifications
+   - Ensure notifications are enabled
+   - Set importance to "High" or "Urgent"
+   - Enable "Pop on screen" or "Heads-up notifications"
+
+3. Testing Priority in OneSignal:
+   - In dashboard, under "Delivery" tab
+   - Set "Priority" to "High"
+   - This makes notifications more likely to show as heads-up
+
+Note: Android 12+ requires notification permission at runtime (already handled)
+
+NOTIFICATION DATA FORMAT:
+-------------------------------
+Send notifications with this JSON structure in Additional Data:
 {
-  "type": "message",
-  "url": "https://example.com/page",
-  "itemId": "123"
+  "url": "https://www.gameofcreators.com/your-page",
+  "type": "custom_type",
+  "itemId": "123",
+  "anyCustomField": "value"
 }
+
+The app will:
+- Parse the URL and navigate to it in webview
+- Log all additional data for debugging
+- Show user feedback when navigating
 
 ===============================================================================
 */

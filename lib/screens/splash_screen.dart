@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../constants/app_constants.dart';
+import '../services/notification_service.dart';
 import 'webview_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -15,6 +16,9 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+
+  String? _initialUrl; // URL to load when WebView opens
+  bool _coldStartChecked = false;
 
   @override
   void initState() {
@@ -50,12 +54,43 @@ class _SplashScreenState extends State<SplashScreen>
     // Start animation
     _animationController.forward();
 
-    // Navigate to WebView after splash duration
+    // CRITICAL: Check for cold start URL from NotificationService
+    _handleColdStart();
+  }
+
+  /// Handle cold start - check if app was opened by deep link or notification
+  Future<void> _handleColdStart() async {
+    try {
+      debugPrint('❄️ Checking for cold start URL...');
+
+      // REMOVED DIRECT CHECK: _appLinks.getInitialLink()
+      // REASON: Main.dart already checked this. We don't want to check twice.
+      // ONLY check NotificationService (Single Source of Truth)
+      final pendingNotificationUrl = NotificationService().getPendingNotificationUrl();
+      if (pendingNotificationUrl != null) {
+        debugPrint('❄️ Cold start URL found in Service: $pendingNotificationUrl');
+        _initialUrl = pendingNotificationUrl;
+      } else {
+        debugPrint('✅ No cold start URL - will load home page');
+      }
+    } catch (e) {
+      debugPrint('❌ Error checking cold start: $e');
+    } finally {
+      _coldStartChecked = true;
+      _navigateToWebView();
+    }
+  }
+
+  /// Navigate to WebView after cold start check and splash animation
+  void _navigateToWebView() {
+    // Wait for minimum splash duration
     Future.delayed(AppConstants.splashDuration, () {
-      if (mounted) {
+      if (mounted && _coldStartChecked) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (context) => const WebViewScreen(),
+            builder: (context) => WebViewScreen(
+              initialUrl: _initialUrl,
+            ),
           ),
         );
       }

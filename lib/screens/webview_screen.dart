@@ -13,11 +13,17 @@ import '../constants/app_constants.dart';
 import '../widgets/error_widget.dart';
 import '../widgets/loading_widget.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 
 class WebViewScreen extends StatefulWidget {
   final WebViewController? preloadedController;
+  final String? initialUrl; // URL to load on cold start (from notification/deep link)
 
-  const WebViewScreen({super.key, this.preloadedController});
+  const WebViewScreen({
+    super.key,
+    this.preloadedController,
+    this.initialUrl,
+  });
 
   @override
   State<WebViewScreen> createState() => _WebViewScreenState();
@@ -38,6 +44,7 @@ class _WebViewScreenState extends State<WebViewScreen>
   bool _optimizationsInjected = false;
   bool _sessionInjected = false;
   bool _youtubeOAuthInProgress = false;
+  String? _pendingNotificationUrl;
 
   @override
   void initState() {
@@ -85,31 +92,20 @@ class _WebViewScreenState extends State<WebViewScreen>
   void _initDeepLinks() async {
     _appLinks = AppLinks();
 
-    // Handle links when app is already running
+    // 1. Listen for Run-time links (Background/Foreground)
     _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
       _handleDeepLink(uri);
     });
 
-    // Check if app was opened with a deep link
-    try {
-      final uri = await _appLinks.getInitialLink();
-      if (uri != null) {
-        _handleDeepLink(uri);
-      }
-    } catch (e) {
-      // Handle error
-      debugPrint('Failed to get initial link: $e');
-    }
+    // REMOVED: getInitialLink() check
+    // REASON: It is handled by main.dart -> NotificationService -> widget.initialUrl
   }
 
   void _handleDeepLink(Uri uri) {
     debugPrint('🔗 Deep link received: $uri');
-    debugPrint('🔗 Scheme: ${uri.scheme}');
-    debugPrint('🔗 Host: ${uri.host}');
-    debugPrint('🔗 Path: ${uri.path}');
-    debugPrint('🔗 Query: ${uri.query}');
 
-    // Handle custom scheme (gameofcreators://auth/callback)
+    // Handle OAuth callbacks (Google, Instagram, Youtube)
+    // If it's just a normal link to your site, load it
     if (uri.scheme == 'gameofcreators' &&
         uri.host == 'auth' &&
         uri.path.contains('/callback')) {
@@ -260,6 +256,18 @@ class _WebViewScreenState extends State<WebViewScreen>
       _webViewController = WebViewController.fromPlatformCreationParams(params);
     }
 
+    // Set the WebViewController reference in NotificationService for navigation
+    // Provide a custom navigation callback that bypasses the navigation delegate
+    NotificationService().setWebViewController(
+      _webViewController,
+      onNavigate: (String url) {
+        debugPrint('🔔 Navigating from notification to: $url');
+        // Set flag to allow this URL in navigation delegate
+        _pendingNotificationUrl = url;
+        _webViewController.loadRequest(Uri.parse(url));
+      },
+    );
+
     // Configure the controller
     _webViewController
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -318,6 +326,13 @@ class _WebViewScreenState extends State<WebViewScreen>
             }
           },
           onNavigationRequest: (NavigationRequest request) async {
+            // Allow navigation from notifications (bypass all checks)
+            if (_pendingNotificationUrl != null && request.url == _pendingNotificationUrl) {
+              debugPrint('✅ Allowing notification navigation to: ${request.url}');
+              _pendingNotificationUrl = null; // Clear the flag
+              return NavigationDecision.navigate;
+            }
+
             // Detect YouTube OAuth flow start
             if (request.url.contains('/api/youtube/auth')) {
               _youtubeOAuthInProgress = true;
@@ -455,7 +470,17 @@ class _WebViewScreenState extends State<WebViewScreen>
       _hasError = false;
       _isLoading = true;
     });
-    _webViewController.loadRequest(Uri.parse(AppConstants.websiteUrl));
+
+    // Use initial URL from cold start (notification/deep link) or default home page
+    final urlToLoad = widget.initialUrl ?? AppConstants.websiteUrl;
+
+    if (widget.initialUrl != null) {
+      debugPrint('❄️ Loading cold start URL: $urlToLoad');
+    } else {
+      debugPrint('🏠 Loading home page: $urlToLoad');
+    }
+
+    _webViewController.loadRequest(Uri.parse(urlToLoad));
 
     _injectMobileOptimizations();
   }
