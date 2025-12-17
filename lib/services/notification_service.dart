@@ -38,6 +38,29 @@ class NotificationService {
       'WebViewController set for notifications',
       name: 'NotificationService',
     );
+
+    // FIX: Don't automatically navigate here
+    // The WebViewScreen will check for pending URL and handle it in _loadWebsite()
+    // This prevents double-loading and race conditions
+    if (_pendingNotificationUrl != null) {
+      developer.log(
+        '❄️ Pending URL will be handled by WebViewScreen: $_pendingNotificationUrl',
+        name: 'NotificationService',
+      );
+      // Note: We don't clear or navigate here - WebViewScreen will pick it up
+    }
+  }
+
+  /// Clear the pending notification URL after it has been used
+  /// Call this from WebViewScreen after successfully loading the URL
+  void clearPendingNotificationUrl() {
+    if (_pendingNotificationUrl != null) {
+      developer.log(
+        '✅ Clearing pending notification URL: $_pendingNotificationUrl',
+        name: 'NotificationService',
+      );
+      _pendingNotificationUrl = null;
+    }
   }
 
   /// Initialize OneSignal with error handling
@@ -132,9 +155,45 @@ class NotificationService {
     );
   }
 
-  /// Navigate to a URL in the webview
-  Future<void> navigateToUrl(String url) async {
+  /// Helper to convert custom schemes to HTTPS
+  String _normalizeUrl(String url) {
     try {
+      final uri = Uri.parse(url);
+      
+      // Handle custom scheme: gameofcreators://auth/callback -> https://www.gameofcreators.com/auth/callback
+      if (uri.scheme == 'gameofcreators') {
+        if (uri.host == 'auth' && uri.path.contains('/callback')) {
+          final httpsUrl = 'https://www.gameofcreators.com/auth/callback?${uri.query}';
+          developer.log('🔄 Converted Auth Scheme: $url -> $httpsUrl', name: 'NotificationService');
+          return httpsUrl;
+        }
+        
+        if (uri.host == 'instagram' && uri.path.contains('/callback')) {
+          final httpsUrl = 'https://www.gameofcreators.com/api/instagram/callback?${uri.query}';
+          developer.log('🔄 Converted Instagram Scheme: $url -> $httpsUrl', name: 'NotificationService');
+          return httpsUrl;
+        }
+
+        if (uri.host == 'youtube' && uri.path.contains('/callback')) {
+          final httpsUrl = 'https://www.gameofcreators.com/api/youtube/callback?${uri.query}';
+          developer.log('🔄 Converted YouTube Scheme: $url -> $httpsUrl', name: 'NotificationService');
+          return httpsUrl;
+        }
+      }
+      
+      return url;
+    } catch (e) {
+      developer.log('Error normalizing URL: $url', error: e, name: 'NotificationService');
+      return url;
+    }
+  }
+
+  /// Navigate to a URL in the webview
+  Future<void> navigateToUrl(String rawUrl) async {
+    try {
+      // 1. Normalize the URL (handle custom schemes)
+      final url = _normalizeUrl(rawUrl);
+      
       developer.log('Navigating webview to: $url', name: 'NotificationService');
 
       // Parse the URL to ensure it's valid
@@ -181,6 +240,9 @@ class NotificationService {
 
   /// Get pending notification URL (for cold start)
   /// Call this from SplashScreen to retrieve the URL stored before WebView was ready
+  ///
+  /// IMPORTANT: This does NOT clear the pending URL!
+  /// The URL will be cleared only when WebView controller uses it via setWebViewController()
   String? getPendingNotificationUrl() {
     final url = _pendingNotificationUrl;
     if (url != null) {
@@ -188,8 +250,7 @@ class NotificationService {
         'Retrieved pending notification URL: $url',
         name: 'NotificationService',
       );
-      // Clear it after retrieval to prevent reuse
-      _pendingNotificationUrl = null;
+      // DO NOT clear here - let setWebViewController handle it when WebView is ready
     }
     return url;
   }
@@ -293,10 +354,17 @@ class NotificationService {
         }
 
         // Handle URL navigation when notification is clicked
-        if (additionalData.containsKey('url')) {
-          final url = additionalData['url'] as String;
+        // Support both 'url' and 'target_url' keys for flexibility
+        final urlKey = additionalData.containsKey('url')
+            ? 'url'
+            : additionalData.containsKey('target_url')
+                ? 'target_url'
+                : null;
+
+        if (urlKey != null) {
+          final url = additionalData[urlKey] as String;
           developer.log(
-            'Notification contains URL: $url',
+            'Notification contains URL ($urlKey): $url',
             name: 'NotificationService',
           );
 
@@ -621,13 +689,18 @@ NOTIFICATION DATA FORMAT:
 Send notifications with this JSON structure in Additional Data:
 {
   "url": "https://www.gameofcreators.com/your-page",
+  // OR
+  "target_url": "https://www.gameofcreators.com/your-page",
+  // Both 'url' and 'target_url' are supported
+
   "type": "custom_type",
   "itemId": "123",
   "anyCustomField": "value"
 }
 
 The app will:
-- Parse the URL and navigate to it in webview
+- Parse the URL (supports both 'url' and 'target_url' keys)
+- Navigate to it in webview
 - Log all additional data for debugging
 - Show user feedback when navigating
 

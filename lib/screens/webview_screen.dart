@@ -5,7 +5,6 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:app_links/app_links.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
@@ -38,8 +37,6 @@ class _WebViewScreenState extends State<WebViewScreen>
   double _loadingProgress = 0.0;
   bool _canGoBack = false;
   DateTime? _lastBackPressed;
-  late AppLinks _appLinks;
-  StreamSubscription<Uri>? _linkSubscription;
   bool _authInProgress = false;
   bool _optimizationsInjected = false;
   bool _sessionInjected = false;
@@ -53,7 +50,10 @@ class _WebViewScreenState extends State<WebViewScreen>
     _initializeWebView();
     // Don't check connectivity on init - let WebView handle it
     // _checkConnectivity() removed - causes false positives
-    _initDeepLinks();
+    
+    // REMOVED: _initDeepLinks()
+    // REASON: Deep links are now handled exclusively by main.dart -> NotificationService
+    // This prevents race conditions and ensures a single source of truth.
 
     // Set status bar style
     SystemChrome.setSystemUIOverlayStyle(
@@ -62,175 +62,6 @@ class _WebViewScreenState extends State<WebViewScreen>
         statusBarIconBrightness: Brightness.light,
       ),
     );
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-
-    // When user returns to the app after authentication
-    if (state == AppLifecycleState.resumed && _authInProgress) {
-      debugPrint('📱 App resumed - checking authentication state');
-      _authInProgress = false;
-
-      // Reload the current page to pick up authentication state
-      _webViewController.reload();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Checking authentication status...'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.blue,
-          ),
-        );
-      }
-    }
-  }
-
-  /// Initialize deep link handling for OAuth callbacks
-  void _initDeepLinks() async {
-    _appLinks = AppLinks();
-
-    // 1. Listen for Run-time links (Background/Foreground)
-    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
-      _handleDeepLink(uri);
-    });
-
-    // REMOVED: getInitialLink() check
-    // REASON: It is handled by main.dart -> NotificationService -> widget.initialUrl
-  }
-
-  void _handleDeepLink(Uri uri) {
-    debugPrint('🔗 Deep link received: $uri');
-
-    // Handle OAuth callbacks (Google, Instagram, Youtube)
-    // If it's just a normal link to your site, load it
-    if (uri.scheme == 'gameofcreators' &&
-        uri.host == 'auth' &&
-        uri.path.contains('/callback')) {
-      debugPrint('✅ Custom scheme Google Auth callback detected');
-
-      final httpsUrl =
-          'https://www.gameofcreators.com/auth/callback?${uri.query}';
-      debugPrint('📍 Loading HTTPS URL: $httpsUrl');
-      _webViewController.loadRequest(Uri.parse(httpsUrl));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Completing authentication...'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-      return;
-    }
-
-    // Handle Instagram callback (gameofcreators://instagram/callback)
-    if (uri.scheme == 'gameofcreators' &&
-        uri.host == 'instagram' &&
-        uri.path.contains('/callback')) {
-      debugPrint('✅ Custom scheme Instagram callback detected');
-
-      final httpsUrl =
-          'https://www.gameofcreators.com/api/instagram/callback?${uri.query}';
-      debugPrint('📍 Loading HTTPS URL: $httpsUrl');
-      _webViewController.loadRequest(Uri.parse(httpsUrl));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connecting Instagram account...'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-      return;
-    }
-
-    // Handle YouTube callback (gameofcreators://youtube/callback)
-    if (uri.scheme == 'gameofcreators' &&
-        uri.host == 'youtube' &&
-        uri.path.contains('/callback')) {
-      debugPrint('✅ Custom scheme YouTube callback detected');
-
-      final httpsUrl =
-          'https://www.gameofcreators.com/api/youtube/callback?${uri.query}';
-      debugPrint('📍 Loading HTTPS URL: $httpsUrl');
-      _webViewController.loadRequest(Uri.parse(httpsUrl));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connecting YouTube account...'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-      return;
-    }
-
-    // Handle HTTPS deep link (https://www.gameofcreators.com/auth/callback)
-    // OR mobile-specific path (https://www.gameofcreators.com/mobile/auth/callback)
-    if (uri.path.contains('/auth/callback') ||
-        uri.path.contains('/mobile/auth/callback')) {
-      debugPrint('✅ HTTPS Google Auth callback detected - Loading in WebView');
-      _webViewController.loadRequest(uri);
-
-      // Show user feedback cha-cha Ne call kar
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Completing authentication...'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-      return;
-    }
-
-    // Handle HTTPS Instagram callback
-    if (uri.path.contains('/api/instagram/callback')) {
-      debugPrint('✅ HTTPS Instagram callback detected - Loading in WebView');
-      _webViewController.loadRequest(uri);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connecting Instagram account...'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-      return;
-    }
-
-    // Handle HTTPS YouTube callback
-    // OR mobile-specific path (https://www.gameofcreators.com/mobile/youtube/callback)
-    if (uri.path.contains('/api/youtube/callback') ||
-        uri.path.contains('/mobile/youtube/callback')) {
-      debugPrint('✅ HTTPS YouTube callback detected - Loading in WebView');
-      _webViewController.loadRequest(uri);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connecting YouTube account...'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-      return;
-    }
-
-    debugPrint('❌ Not a recognized callback URL');
   }
 
   void _initializeWebView() {
@@ -261,12 +92,24 @@ class _WebViewScreenState extends State<WebViewScreen>
     NotificationService().setWebViewController(
       _webViewController,
       onNavigate: (String url) {
-        debugPrint('🔔 Navigating from notification to: $url');
+        debugPrint('🔔 Notification callback triggered for: $url');
+        debugPrint('🔔 Setting _pendingNotificationUrl and loading request...');
         // Set flag to allow this URL in navigation delegate
         _pendingNotificationUrl = url;
+        // Load the URL - the navigation delegate will allow it via _pendingNotificationUrl
         _webViewController.loadRequest(Uri.parse(url));
+        debugPrint('🔔 loadRequest() called for: $url');
       },
     );
+
+    // FIX: Check if there's a pending notification URL from cold start
+    // This happens when a notification was clicked before WebView was ready
+    final coldStartUrl = NotificationService().getPendingNotificationUrl();
+    if (coldStartUrl != null) {
+      debugPrint('❄️ Cold start notification URL detected: $coldStartUrl');
+      // Use the same navigation callback to ensure consistent handling
+      _pendingNotificationUrl = coldStartUrl;
+    }
 
     // Configure the controller
     _webViewController
@@ -327,10 +170,40 @@ class _WebViewScreenState extends State<WebViewScreen>
           },
           onNavigationRequest: (NavigationRequest request) async {
             // Allow navigation from notifications (bypass all checks)
-            if (_pendingNotificationUrl != null && request.url == _pendingNotificationUrl) {
-              debugPrint('✅ Allowing notification navigation to: ${request.url}');
-              _pendingNotificationUrl = null; // Clear the flag
-              return NavigationDecision.navigate;
+            if (_pendingNotificationUrl != null) {
+              final pendingUri = Uri.parse(_pendingNotificationUrl!);
+              final requestUri = Uri.parse(request.url);
+
+              debugPrint('🔔 Navigation Request: ${request.url}');
+              debugPrint('🔔 Pending URL: $_pendingNotificationUrl');
+
+              // Check if they match (ignoring trailing slashes or minor differences)
+              // Or if the request is a result of the pending URL (e.g. redirect)
+              final matches = request.url == _pendingNotificationUrl ||
+                            (requestUri.host == pendingUri.host && requestUri.path == pendingUri.path);
+
+              debugPrint('🔔 Matches: $matches');
+
+              // FIX: Also allow same-domain navigation during pending notification
+              // This handles cases where the WebView might navigate to home first
+              final sameDomain = requestUri.host == pendingUri.host;
+
+              if (matches) {
+                debugPrint('✅ Allowing notification navigation (exact match): ${request.url}');
+                // Clear both local flag and NotificationService pending URL
+                _pendingNotificationUrl = null;
+                NotificationService().clearPendingNotificationUrl();
+                return NavigationDecision.navigate;
+              } else if (sameDomain && request.url.contains(AppConstants.websiteDomain)) {
+                // Allow same-domain navigation but keep the flag until we reach the target
+                debugPrint('✅ Allowing same-domain navigation (keeping flag): ${request.url}');
+                return NavigationDecision.navigate;
+              } else {
+                // Different domain or doesn't match - block it and try to force navigate to pending URL
+                debugPrint('⚠️ Navigation blocked, forcing reload of pending URL');
+                _webViewController.loadRequest(Uri.parse(_pendingNotificationUrl!));
+                return NavigationDecision.prevent;
+              }
             }
 
             // Detect YouTube OAuth flow start
@@ -471,13 +344,25 @@ class _WebViewScreenState extends State<WebViewScreen>
       _isLoading = true;
     });
 
-    // Use initial URL from cold start (notification/deep link) or default home page
-    final urlToLoad = widget.initialUrl ?? AppConstants.websiteUrl;
+    // FIX: Determine which URL to load with proper priority:
+    // 1. Pending notification URL (from cold start or notification click)
+    // 2. Initial URL passed from SplashScreen
+    // 3. Default home page
+    String urlToLoad;
 
-    if (widget.initialUrl != null) {
-      debugPrint('❄️ Loading cold start URL: $urlToLoad');
+    if (_pendingNotificationUrl != null) {
+      // HIGHEST PRIORITY: Notification/deep link URL
+      urlToLoad = _pendingNotificationUrl!;
+      debugPrint('🔔 Loading notification/deep link URL: $urlToLoad');
+      // Don't clear _pendingNotificationUrl yet - navigation delegate needs it
+    } else if (widget.initialUrl != null) {
+      // MEDIUM PRIORITY: Initial URL from splash screen
+      urlToLoad = widget.initialUrl!;
+      debugPrint('❄️ Loading cold start URL from widget: $urlToLoad');
     } else {
-      debugPrint('🏠 Loading home page: $urlToLoad');
+      // LOWEST PRIORITY: Default home page
+      urlToLoad = AppConstants.websiteUrl;
+      debugPrint('🏠 Loading default home page: $urlToLoad');
     }
 
     _webViewController.loadRequest(Uri.parse(urlToLoad));
@@ -1056,7 +941,6 @@ class _WebViewScreenState extends State<WebViewScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _linkSubscription?.cancel();
     super.dispose();
   }
 }
