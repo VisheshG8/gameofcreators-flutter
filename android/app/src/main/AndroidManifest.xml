@@ -50,13 +50,13 @@
             </intent-filter>
 
             <!-- Also handle non-www domain -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https"
-                      android:host="gameofcreators.com"/>
-            </intent-filter>
+<!--            <intent-filter android:autoVerify="true">-->
+<!--                <action android:name="android.intent.action.VIEW"/>-->
+<!--                <category android:name="android.intent.category.DEFAULT"/>-->
+<!--                <category android:name="android.intent.category.BROWSABLE"/>-->
+<!--                <data android:scheme="https"-->
+<!--                      android:host="gameofcreators.com"/>-->
+<!--            </intent-filter>-->
 
             <!-- Deep link intent filter for OAuth callbacks (HTTPS) -->
             <intent-filter android:autoVerify="true">
