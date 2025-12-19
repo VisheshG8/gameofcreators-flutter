@@ -3,11 +3,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- Permissions for file uploads (camera and gallery) -->
+    <!-- Camera permission for WebView file uploads (camera capture) -->
     <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
 
     <!-- Camera hardware (optional - app works without camera) -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
@@ -44,24 +41,20 @@
 
             <!-- UNIVERSAL APP LINK: Handle ALL URLs from gameofcreators.com -->
             <!-- This ensures the app opens for ANY link from your domain -->
-            <intent-filter android:autoVerify="true" android:priority="999">
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https"
-                      android:host="www.gameofcreators.com"/>
-                <data android:scheme="http"
                       android:host="www.gameofcreators.com"/>
             </intent-filter>
 
-            <!-- Also handle non-www version -->
-            <intent-filter android:autoVerify="true" android:priority="999">
+            <!-- Also handle non-www domain -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https"
-                      android:host="gameofcreators.com"/>
-                <data android:scheme="http"
                       android:host="gameofcreators.com"/>
             </intent-filter>
 

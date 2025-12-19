@@ -13,6 +13,13 @@ class NotificationService {
   // OneSignal App ID
   static const String _oneSignalAppId = 'a0aa2c71-2fc2-4869-8b56-df44a690e0f6';
 
+  // CRITICAL: This is the channel ID that MUST match:
+  // 1. The channel created in MainActivity.kt
+  // 2. The channel ID in OneSignal Dashboard when sending notifications
+  // 3. The android_channel_id parameter when sending notifications via API/Dashboard
+  // NEW ID: Changed to force fresh channel creation with correct IMPORTANCE_HIGH
+  static const String _androidChannelId = 'game_of_creators_headsup_v2';
+
   // Flag to track initialization status
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
@@ -31,7 +38,10 @@ class NotificationService {
 
   /// Set the WebViewController for handling notification navigation
   /// Call this from your WebViewScreen after initializing the controller
-  void setWebViewController(WebViewController controller, {Function(String url)? onNavigate}) {
+  void setWebViewController(
+    WebViewController controller, {
+    Function(String url)? onNavigate,
+  }) {
     _webViewController = controller;
     _navigationCallback = onNavigate;
     developer.log(
@@ -74,7 +84,23 @@ class NotificationService {
     }
 
     try {
-      developer.log('Initializing OneSignal...', name: 'NotificationService');
+      developer.log(
+        '===========================================',
+        name: 'NotificationService',
+      );
+      developer.log(
+        '🚀 Initializing OneSignal...',
+        name: 'NotificationService',
+      );
+      developer.log('App ID: $_oneSignalAppId', name: 'NotificationService');
+      developer.log(
+        'Android Channel ID: $_androidChannelId',
+        name: 'NotificationService',
+      );
+      developer.log(
+        '===========================================',
+        name: 'NotificationService',
+      );
 
       // Store navigator key for showing snackbars
       _navigatorKey = navigatorKey;
@@ -90,7 +116,7 @@ class NotificationService {
       _setupNotificationHandlers();
 
       developer.log(
-        'OneSignal initialized successfully with heads-up notification support',
+        '✅ OneSignal initialized successfully with heads-up notification support',
         name: 'NotificationService',
       );
       _isInitialized = true;
@@ -159,31 +185,47 @@ class NotificationService {
   String _normalizeUrl(String url) {
     try {
       final uri = Uri.parse(url);
-      
+
       // Handle custom scheme: gameofcreators://auth/callback -> https://www.gameofcreators.com/auth/callback
       if (uri.scheme == 'gameofcreators') {
         if (uri.host == 'auth' && uri.path.contains('/callback')) {
-          final httpsUrl = 'https://www.gameofcreators.com/auth/callback?${uri.query}';
-          developer.log('🔄 Converted Auth Scheme: $url -> $httpsUrl', name: 'NotificationService');
+          final httpsUrl =
+              'https://www.gameofcreators.com/auth/callback?${uri.query}';
+          developer.log(
+            '🔄 Converted Auth Scheme: $url -> $httpsUrl',
+            name: 'NotificationService',
+          );
           return httpsUrl;
         }
-        
+
         if (uri.host == 'instagram' && uri.path.contains('/callback')) {
-          final httpsUrl = 'https://www.gameofcreators.com/api/instagram/callback?${uri.query}';
-          developer.log('🔄 Converted Instagram Scheme: $url -> $httpsUrl', name: 'NotificationService');
+          final httpsUrl =
+              'https://www.gameofcreators.com/api/instagram/callback?${uri.query}';
+          developer.log(
+            '🔄 Converted Instagram Scheme: $url -> $httpsUrl',
+            name: 'NotificationService',
+          );
           return httpsUrl;
         }
 
         if (uri.host == 'youtube' && uri.path.contains('/callback')) {
-          final httpsUrl = 'https://www.gameofcreators.com/api/youtube/callback?${uri.query}';
-          developer.log('🔄 Converted YouTube Scheme: $url -> $httpsUrl', name: 'NotificationService');
+          final httpsUrl =
+              'https://www.gameofcreators.com/api/youtube/callback?${uri.query}';
+          developer.log(
+            '🔄 Converted YouTube Scheme: $url -> $httpsUrl',
+            name: 'NotificationService',
+          );
           return httpsUrl;
         }
       }
-      
+
       return url;
     } catch (e) {
-      developer.log('Error normalizing URL: $url', error: e, name: 'NotificationService');
+      developer.log(
+        'Error normalizing URL: $url',
+        error: e,
+        name: 'NotificationService',
+      );
       return url;
     }
   }
@@ -193,7 +235,7 @@ class NotificationService {
     try {
       // 1. Normalize the URL (handle custom schemes)
       final url = _normalizeUrl(rawUrl);
-      
+
       developer.log('Navigating webview to: $url', name: 'NotificationService');
 
       // Parse the URL to ensure it's valid
@@ -212,7 +254,10 @@ class NotificationService {
 
       // Fallback to direct webview loading
       if (_webViewController != null) {
-        developer.log('Using direct webview loading', name: 'NotificationService');
+        developer.log(
+          'Using direct webview loading',
+          name: 'NotificationService',
+        );
         await _webViewController!.loadRequest(uri);
       } else {
         // WebView not ready yet - store URL for cold start
@@ -271,6 +316,30 @@ class NotificationService {
       developer.log('Body: ${notification.body}', name: 'NotificationService');
       developer.log(
         'Additional Data: ${notification.additionalData}',
+        name: 'NotificationService',
+      );
+
+      // DIAGNOSTIC: Log Android-specific notification details
+      developer.log(
+        '🔔 Notification ID (NOT Channel ID): ${notification.androidNotificationId}',
+        name: 'NotificationService',
+      );
+      developer.log(
+        '🔔 Expected Channel ID in MainActivity.kt: $_androidChannelId',
+        name: 'NotificationService',
+      );
+
+      // Extract the actual channel ID from raw payload if available
+      final rawPayload = notification.rawPayload;
+      if (rawPayload != null && rawPayload.containsKey('android_channel_id')) {
+        developer.log(
+          '🔔 Channel ID from payload: ${rawPayload['android_channel_id']}',
+          name: 'NotificationService',
+        );
+      }
+
+      developer.log(
+        '🔔 Raw Notification Data: ${notification.rawPayload}',
         name: 'NotificationService',
       );
 
@@ -358,8 +427,8 @@ class NotificationService {
         final urlKey = additionalData.containsKey('url')
             ? 'url'
             : additionalData.containsKey('target_url')
-                ? 'target_url'
-                : null;
+            ? 'target_url'
+            : null;
 
         if (urlKey != null) {
           final url = additionalData[urlKey] as String;
@@ -532,6 +601,10 @@ class NotificationService {
         'Device ID: ${deviceId ?? "Not available"}',
         name: 'NotificationService',
       );
+      developer.log(
+        'Android Channel ID: $_androidChannelId',
+        name: 'NotificationService',
+      );
       developer.log('==========================', name: 'NotificationService');
     } catch (e, stackTrace) {
       developer.log(
@@ -542,167 +615,8 @@ class NotificationService {
       );
     }
   }
+
+  /// Get the Android Channel ID for heads-up notifications
+  /// Use this when sending notifications via OneSignal REST API
+  String get androidChannelId => _androidChannelId;
 }
-
-/*
-===============================================================================
-USAGE EXAMPLES:
-===============================================================================
-
-1. INITIALIZE IN main.dart:
--------------------------------
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  final navigatorKey = GlobalKey<NavigatorState>();
-
-  // Initialize other services
-  await AuthService.initializeSupabase();
-
-  // Initialize notifications
-  await NotificationService().initialize(navigatorKey: navigatorKey);
-
-  // Request permission (or do this later in app)
-  await NotificationService().requestPermission();
-
-  runApp(MyApp(navigatorKey: navigatorKey));
-}
-
-class MyApp extends StatelessWidget {
-  final GlobalKey<NavigatorState> navigatorKey;
-
-  const MyApp({required this.navigatorKey, Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      home: SplashScreen(),
-    );
-  }
-}
-
-2. SET WEBVIEW CONTROLLER IN WebViewScreen:
--------------------------------
-@override
-void initState() {
-  super.initState();
-  _initializeWebView();
-}
-
-void _initializeWebView() {
-  // ... create webview controller ...
-
-  // IMPORTANT: Set the controller in NotificationService for navigation
-  // Provide a callback that sets a flag to bypass navigation delegate checks
-  NotificationService().setWebViewController(
-    _webViewController,
-    onNavigate: (String url) {
-      _pendingNotificationUrl = url; // Flag to allow this URL
-      _webViewController.loadRequest(Uri.parse(url));
-    },
-  );
-}
-
-// In your navigation delegate:
-onNavigationRequest: (NavigationRequest request) async {
-  // Allow notification URLs to bypass external link checks
-  if (_pendingNotificationUrl != null && request.url == _pendingNotificationUrl) {
-    _pendingNotificationUrl = null;
-    return NavigationDecision.navigate;
-  }
-  // ... rest of your navigation logic ...
-}
-
-3. SET USER ID AFTER LOGIN:
--------------------------------
-// After successful login
-final userId = userResponse.id; // or email, or any unique identifier
-await NotificationService().setUserId(userId);
-
-4. LOGOUT USER:
--------------------------------
-// When user logs out
-await NotificationService().logoutUser();
-
-5. CHECK PERMISSION STATUS:
--------------------------------
-final hasPermission = await NotificationService().hasPermission();
-if (!hasPermission) {
-  // Show UI to request permission
-  await NotificationService().requestPermission();
-}
-
-6. GET DEVICE ID FOR TESTING:
--------------------------------
-final deviceId = await NotificationService().getDeviceId();
-print('Send test notification to: $deviceId');
-
-7. LOG NOTIFICATION STATUS:
--------------------------------
-await NotificationService().logPermissionStatus();
-
-===============================================================================
-TESTING NOTIFICATIONS WITH WEBVIEW NAVIGATION:
-===============================================================================
-
-1. Get device ID from logs or using getDeviceId()
-2. Go to OneSignal dashboard → Messages → New Push
-3. Create a new notification with:
-   - Title: "New Message"
-   - Body: "You have a new message waiting"
-   - Additional Data (JSON):
-     {
-       "url": "https://www.gameofcreators.com/dashboard/messages",
-       "type": "message"
-     }
-4. Under "Send to" select "Player IDs" and paste your device ID
-5. Send the notification
-6. When you click the notification, it will:
-   - Log the click event
-   - Navigate to the URL in your webview
-   - Show a snackbar confirming navigation
-
-HEADS-UP NOTIFICATION TIPS (Android):
--------------------------------
-For notifications to appear as pop-ups (like WhatsApp):
-
-1. On OneSignal Dashboard:
-   - Set "Priority" to HIGH when creating notification
-   - Set "Android Channel ID" to your channel (OneSignal creates default)
-
-2. On Device Settings:
-   - Go to Settings → Apps → Your App → Notifications
-   - Ensure notifications are enabled
-   - Set importance to "High" or "Urgent"
-   - Enable "Pop on screen" or "Heads-up notifications"
-
-3. Testing Priority in OneSignal:
-   - In dashboard, under "Delivery" tab
-   - Set "Priority" to "High"
-   - This makes notifications more likely to show as heads-up
-
-Note: Android 12+ requires notification permission at runtime (already handled)
-
-NOTIFICATION DATA FORMAT:
--------------------------------
-Send notifications with this JSON structure in Additional Data:
-{
-  "url": "https://www.gameofcreators.com/your-page",
-  // OR
-  "target_url": "https://www.gameofcreators.com/your-page",
-  // Both 'url' and 'target_url' are supported
-
-  "type": "custom_type",
-  "itemId": "123",
-  "anyCustomField": "value"
-}
-
-The app will:
-- Parse the URL (supports both 'url' and 'target_url' keys)
-- Navigate to it in webview
-- Log all additional data for debugging
-- Show user feedback when navigating
-
-===============================================================================
-*/

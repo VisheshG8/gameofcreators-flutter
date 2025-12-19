@@ -688,20 +688,15 @@ class _WebViewScreenState extends State<WebViewScreen>
   }
 
   /// Handle file selection for WebView uploads
+  /// Uses Android Photo Picker (no broad storage permissions needed)
   Future<List<String>> _androidFilePicker(FileSelectorParams params) async {
     debugPrint('📁 File picker requested');
     debugPrint('📁 Accept types: ${params.acceptTypes}');
     debugPrint('📁 Mode: ${params.mode}');
 
     try {
-      // Request permissions
-      final permissionStatus = await _requestStoragePermission();
-      if (!permissionStatus) {
-        debugPrint('❌ Storage permission denied');
-        return [];
-      }
-
       // Show dialog to choose between camera and gallery
+      // No permission request needed - image_picker handles it automatically
       if (!mounted) return [];
 
       final source = await showDialog<ImageSource>(
@@ -731,7 +726,25 @@ class _WebViewScreenState extends State<WebViewScreen>
         return [];
       }
 
-      // Pick image
+      // Request camera permission only when using camera
+      if (source == ImageSource.camera) {
+        final cameraStatus = await Permission.camera.request();
+        if (!cameraStatus.isGranted) {
+          debugPrint('❌ Camera permission denied');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Camera permission is required to take photos'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return [];
+        }
+      }
+
+      // Pick image - image_picker uses Android Photo Picker on Android 13+
+      // No READ_MEDIA_IMAGES permission needed!
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
@@ -763,28 +776,6 @@ class _WebViewScreenState extends State<WebViewScreen>
       }
       return [];
     }
-  }
-
-  /// Request storage permission
-  Future<bool> _requestStoragePermission() async {
-    // For Android 13+ (API 33+), we need READ_MEDIA_IMAGES
-    // For older versions, we need READ_EXTERNAL_STORAGE
-    if (await Permission.photos.isGranted) {
-      return true;
-    }
-
-    final status = await Permission.photos.request();
-    if (status.isGranted) {
-      return true;
-    }
-
-    // Fallback for older Android versions
-    if (await Permission.storage.isGranted) {
-      return true;
-    }
-
-    final storageStatus = await Permission.storage.request();
-    return storageStatus.isGranted;
   }
 
   /// Launch external URLs in system browser
@@ -880,7 +871,8 @@ class _WebViewScreenState extends State<WebViewScreen>
         if (!didPop) {
           final shouldPop = await _onWillPop();
           if (shouldPop && context.mounted) {
-            Navigator.of(context).pop();
+            // Close the app instead of just popping the route
+            SystemNavigator.pop();
           }
         }
       },
