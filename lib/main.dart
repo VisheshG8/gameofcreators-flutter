@@ -26,6 +26,7 @@ void main() async {
   // 3. --- COLD START & DEEP LINK FIX ---
   // We catch the link HERE, before the UI loads.
   final appLinks = AppLinks();
+  bool coldStartLinkHandled = false;
 
   // A. Handle Cold Start (App was closed)
   try {
@@ -35,14 +36,24 @@ void main() async {
       // Store it in NotificationService immediately.
       // The Service will hold it until the WebView is ready.
       NotificationService().navigateToUrl(initialUri.toString());
+      coldStartLinkHandled = true;
     }
   } catch (e) {
     debugPrint("Error checking initial link: $e");
   }
 
-  // B. Handle Background/Foreground Links (App is running)
+
+  bool skipFirstEvent = coldStartLinkHandled;
+
   appLinks.uriLinkStream.listen((Uri? uri) {
     if (uri != null) {
+      // Skip first stream event if it's the same as cold start link
+      if (skipFirstEvent) {
+        debugPrint("⏭️ Skipping duplicate cold start link from stream: $uri");
+        skipFirstEvent = false;
+        return;
+      }
+
       debugPrint("🔗 Main.dart caught Background Link: $uri");
       NotificationService().navigateToUrl(uri.toString());
     }

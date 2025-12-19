@@ -179,27 +179,31 @@ class _WebViewScreenState extends State<WebViewScreen>
 
               // Check if they match (ignoring trailing slashes or minor differences)
               // Or if the request is a result of the pending URL (e.g. redirect)
+              final pathsMatch = requestUri.path.replaceAll(RegExp(r'/$'), '') ==
+                                 pendingUri.path.replaceAll(RegExp(r'/$'), '');
               final matches = request.url == _pendingNotificationUrl ||
-                            (requestUri.host == pendingUri.host && requestUri.path == pendingUri.path);
+                            (requestUri.host == pendingUri.host && pathsMatch);
 
               debugPrint('🔔 Matches: $matches');
 
-              // FIX: Also allow same-domain navigation during pending notification
-              // This handles cases where the WebView might navigate to home first
+              // Check if this is same-domain navigation
               final sameDomain = requestUri.host == pendingUri.host;
 
               if (matches) {
                 debugPrint('✅ Allowing notification navigation (exact match): ${request.url}');
-                // Clear both local flag and NotificationService pending URL
+                // Clear both local flag and NotificationService pending URL immediately
                 _pendingNotificationUrl = null;
                 NotificationService().clearPendingNotificationUrl();
                 return NavigationDecision.navigate;
               } else if (sameDomain && request.url.contains(AppConstants.websiteDomain)) {
-                // Allow same-domain navigation but keep the flag until we reach the target
-                debugPrint('✅ Allowing same-domain navigation (keeping flag): ${request.url}');
+                // Allow same-domain navigation and clear the flag
+                // This ensures we don't interfere with subsequent navigation
+                debugPrint('✅ Allowing same-domain navigation and clearing flag: ${request.url}');
+                _pendingNotificationUrl = null;
+                NotificationService().clearPendingNotificationUrl();
                 return NavigationDecision.navigate;
               } else {
-                // Different domain or doesn't match - block it and try to force navigate to pending URL
+                // Different domain - block it and try to force navigate to pending URL
                 debugPrint('⚠️ Navigation blocked, forcing reload of pending URL');
                 _webViewController.loadRequest(Uri.parse(_pendingNotificationUrl!));
                 return NavigationDecision.prevent;
