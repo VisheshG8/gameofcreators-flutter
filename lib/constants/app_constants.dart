@@ -7,15 +7,21 @@ class AppConstants {
 
   // App Info
   static const String appName = 'Game of Creators';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.0.5';
 
   // Splash Screen
-  static const Duration splashDuration = Duration(seconds: 3);
+  static const Duration splashDuration = Duration(milliseconds: 2000); // Reduced from 3s to 2s for faster load
 
   // WebView Settings
   static const bool enableJavaScript = true;
   static const bool enableDomStorage = true;
   static const bool enableCache = true;
+
+  // WebView Performance Optimizations
+  static const bool enableWebViewPreloading = true; // Preload WebView during splash
+  static const bool enableResourceBlocking = false; // Block third-party resources (ads, trackers)
+  static const bool enableDNSPrefetch = true; // Prefetch DNS for faster resource loading
+  static const bool enablePassiveEventListeners = true; // Better scroll performance
 
   // Theme Colors
   static const Color primaryColor = Color(0xFFD4AF37);

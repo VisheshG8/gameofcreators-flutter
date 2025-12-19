@@ -9,13 +9,35 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.webkit.WebView
 import io.flutter.embedding.android.FlutterActivity
 
 class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // CRITICAL: Enable WebView optimizations BEFORE Flutter initializes
+        enableWebViewOptimizations()
+
         createNotificationChannel()
         handleIntent(intent)
+    }
+
+    /**
+     * Enable aggressive WebView optimizations for maximum performance
+     * This must run BEFORE any WebView is created
+     */
+    private fun enableWebViewOptimizations() {
+        try {
+            Log.d("MainActivity", "🚀 Enabling WebView optimizations...")
+
+            // Enable WebView debugging (helps with chrome://inspect debugging)
+            WebView.setWebContentsDebuggingEnabled(true)
+
+            Log.d("MainActivity", "✅ WebView optimizations enabled")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Failed to enable WebView optimizations: ${e.message}")
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

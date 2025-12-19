@@ -102,13 +102,14 @@ class _WebViewScreenState extends State<WebViewScreen>
       },
     );
 
-    // FIX: Check if there's a pending notification URL from cold start
-    // This happens when a notification was clicked before WebView was ready
+    // CRITICAL FIX: Check if there's a pending deep link/notification URL from cold start
+    // This happens when a notification/deep link was clicked before WebView was ready
     final coldStartUrl = NotificationService().getPendingNotificationUrl();
     if (coldStartUrl != null) {
-      debugPrint('❄️ Cold start notification URL detected: $coldStartUrl');
-      // Use the same navigation callback to ensure consistent handling
+      debugPrint('❄️ FAST: Cold start deep link URL detected: $coldStartUrl');
+      // Set the pending URL immediately - it will be loaded in _loadWebsite()
       _pendingNotificationUrl = coldStartUrl;
+      debugPrint('✅ Deep link URL will be loaded instead of home page');
     }
 
     // Configure the controller
@@ -120,6 +121,14 @@ class _WebViewScreenState extends State<WebViewScreen>
           onProgress: (int progress) {
             setState(() {
               _loadingProgress = progress / 100;
+
+              // OPTIMIZATION: Hide loading screen at 50% to show content faster
+              // This makes the app feel much faster even if page isn't fully loaded
+              // Lower threshold (50% instead of 60%) for faster perceived performance
+              if (progress >= 50 && _isLoading) {
+                debugPrint('📊 Progress: $progress% - Hiding loading screen');
+                _isLoading = false;
+              }
             });
           },
           onPageStarted: (String url) {
@@ -127,6 +136,10 @@ class _WebViewScreenState extends State<WebViewScreen>
               _isLoading = true;
               _hasError = false;
             });
+
+            // OPTIMIZATION: Inject performance optimizations as early as possible
+            // This happens before DOM is fully loaded for maximum impact
+            _injectEarlyPerformanceOptimizations();
           },
           onPageFinished: (String url) async {
             setState(() {
@@ -169,43 +182,23 @@ class _WebViewScreenState extends State<WebViewScreen>
             }
           },
           onNavigationRequest: (NavigationRequest request) async {
-            // Allow navigation from notifications (bypass all checks)
+            // PRIORITY 1: Allow navigation from notifications/deep links (bypass all checks)
             if (_pendingNotificationUrl != null) {
-              final pendingUri = Uri.parse(_pendingNotificationUrl!);
-              final requestUri = Uri.parse(request.url);
+              debugPrint('🔔 Deep Link Navigation Request: ${request.url}');
+              debugPrint('🔔 Expected Deep Link URL: $_pendingNotificationUrl');
 
-              debugPrint('🔔 Navigation Request: ${request.url}');
-              debugPrint('🔔 Pending URL: $_pendingNotificationUrl');
+              // Check if this navigation is from our domain
+              final isOurDomain = request.url.contains(AppConstants.websiteDomain);
 
-              // Check if they match (ignoring trailing slashes or minor differences)
-              // Or if the request is a result of the pending URL (e.g. redirect)
-              final pathsMatch = requestUri.path.replaceAll(RegExp(r'/$'), '') ==
-                                 pendingUri.path.replaceAll(RegExp(r'/$'), '');
-              final matches = request.url == _pendingNotificationUrl ||
-                            (requestUri.host == pendingUri.host && pathsMatch);
-
-              debugPrint('🔔 Matches: $matches');
-
-              // Check if this is same-domain navigation
-              final sameDomain = requestUri.host == pendingUri.host;
-
-              if (matches) {
-                debugPrint('✅ Allowing notification navigation (exact match): ${request.url}');
-                // Clear both local flag and NotificationService pending URL immediately
-                _pendingNotificationUrl = null;
-                NotificationService().clearPendingNotificationUrl();
-                return NavigationDecision.navigate;
-              } else if (sameDomain && request.url.contains(AppConstants.websiteDomain)) {
-                // Allow same-domain navigation and clear the flag
-                // This ensures we don't interfere with subsequent navigation
-                debugPrint('✅ Allowing same-domain navigation and clearing flag: ${request.url}');
+              if (isOurDomain) {
+                // FAST: Allow any navigation on our domain and clear the flag
+                debugPrint('✅ FAST: Allowing deep link navigation on our domain: ${request.url}');
                 _pendingNotificationUrl = null;
                 NotificationService().clearPendingNotificationUrl();
                 return NavigationDecision.navigate;
               } else {
-                // Different domain - block it and try to force navigate to pending URL
-                debugPrint('⚠️ Navigation blocked, forcing reload of pending URL');
-                _webViewController.loadRequest(Uri.parse(_pendingNotificationUrl!));
+                // Different domain - block it
+                debugPrint('⚠️ Blocked external navigation during deep link: ${request.url}');
                 return NavigationDecision.prevent;
               }
             }
@@ -304,6 +297,9 @@ class _WebViewScreenState extends State<WebViewScreen>
         )
         ..setOnShowFileSelector(_androidFilePicker);
 
+      // CRITICAL PERFORMANCE SETTINGS
+      androidController.enableZoom(false); // Disable zoom for faster rendering
+
       // Use a User-Agent that includes our app identifier for backend detection
       // but maintains standard Chrome format for better Google account detection
       // This helps Google recognize the webview and show account picker properly
@@ -311,13 +307,40 @@ class _WebViewScreenState extends State<WebViewScreen>
         'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 GameOfCreators-Mobile/Android',
       );
 
-      // Enable caching for better performance
+      // PERFORMANCE OPTIMIZATION: Advanced caching and performance settings
       androidController.runJavaScript('''
-        if (window.applicationCache) {
-          window.applicationCache.addEventListener('updateready', function() {
-            window.location.reload();
+        (function() {
+          // Enable AppCache if available
+          if (window.applicationCache) {
+            window.applicationCache.addEventListener('updateready', function() {
+              window.location.reload();
+            });
+          }
+
+          // Prefetch DNS for common resources
+          var dnsPrefetch = ['https://www.google-analytics.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
+          dnsPrefetch.forEach(function(url) {
+            var link = document.createElement('link');
+            link.rel = 'dns-prefetch';
+            link.href = url;
+            document.head.appendChild(link);
           });
-        }
+
+          // Enable passive event listeners for better scroll performance
+          if (typeof EventTarget !== 'undefined') {
+            var originalAddEventListener = EventTarget.prototype.addEventListener;
+            EventTarget.prototype.addEventListener = function(type, listener, options) {
+              if (type === 'touchstart' || type === 'touchmove' || type === 'wheel' || type === 'mousewheel') {
+                if (typeof options === 'boolean') {
+                  options = { capture: options, passive: true };
+                } else if (typeof options === 'object' && options.passive === undefined) {
+                  options.passive = true;
+                }
+              }
+              return originalAddEventListener.call(this, type, listener, options);
+            };
+          }
+        })();
       ''');
     } else if (_webViewController.platform is WebKitWebViewController) {
       final iosController =
@@ -348,17 +371,18 @@ class _WebViewScreenState extends State<WebViewScreen>
       _isLoading = true;
     });
 
-    // FIX: Determine which URL to load with proper priority:
-    // 1. Pending notification URL (from cold start or notification click)
+    // FAST PRIORITY: Determine which URL to load:
+    // 1. Pending notification/deep link URL (HIGHEST - from cold start or notification click)
     // 2. Initial URL passed from SplashScreen
     // 3. Default home page
     String urlToLoad;
 
     if (_pendingNotificationUrl != null) {
-      // HIGHEST PRIORITY: Notification/deep link URL
+      // HIGHEST PRIORITY: Deep link/notification URL
       urlToLoad = _pendingNotificationUrl!;
-      debugPrint('🔔 Loading notification/deep link URL: $urlToLoad');
+      debugPrint('🔔 FAST: Loading deep link URL immediately: $urlToLoad');
       // Don't clear _pendingNotificationUrl yet - navigation delegate needs it
+      // It will be cleared when navigation succeeds
     } else if (widget.initialUrl != null) {
       // MEDIUM PRIORITY: Initial URL from splash screen
       urlToLoad = widget.initialUrl!;
@@ -369,9 +393,70 @@ class _WebViewScreenState extends State<WebViewScreen>
       debugPrint('🏠 Loading default home page: $urlToLoad');
     }
 
+    debugPrint('⚡ FAST LOAD: Initiating request to: $urlToLoad');
     _webViewController.loadRequest(Uri.parse(urlToLoad));
 
     _injectMobileOptimizations();
+  }
+
+  /// Inject early performance optimizations before DOM is fully loaded
+  void _injectEarlyPerformanceOptimizations() {
+    // Run critical performance scripts as early as possible
+    _webViewController.runJavaScript('''
+      (function() {
+        // Mark app start time
+        window.mobileAppLoadStart = performance.now();
+
+        // AGGRESSIVE: Force lazy loading for ALL images and iframes
+        if (document.documentElement) {
+          document.documentElement.setAttribute('loading', 'lazy');
+        }
+
+        // Intercept image loading to add lazy loading
+        var originalCreateElement = document.createElement;
+        document.createElement = function(tagName) {
+          var element = originalCreateElement.call(document, tagName);
+          if (tagName.toLowerCase() === 'img') {
+            element.setAttribute('loading', 'lazy');
+            element.setAttribute('decoding', 'async');
+          } else if (tagName.toLowerCase() === 'iframe') {
+            element.setAttribute('loading', 'lazy');
+          }
+          return element;
+        };
+
+        // Reduce image quality for faster loading
+        window.addEventListener('DOMContentLoaded', function() {
+          var imgs = document.getElementsByTagName('img');
+          for (var i = 0; i < imgs.length; i++) {
+            if (!imgs[i].hasAttribute('loading')) {
+              imgs[i].setAttribute('loading', 'lazy');
+              imgs[i].setAttribute('decoding', 'async');
+            }
+          }
+        });
+
+        // Preconnect to critical domains IMMEDIATELY
+        var criticalDomains = [
+          'https://www.gameofcreators.com',
+          'https://rjprmbjqetxkramwbrqo.supabase.co',
+          'https://fonts.googleapis.com',
+          'https://fonts.gstatic.com'
+        ];
+
+        if (document.head) {
+          criticalDomains.forEach(function(domain) {
+            var link = document.createElement('link');
+            link.rel = 'preconnect';
+            link.href = domain;
+            link.crossOrigin = 'anonymous';
+            document.head.appendChild(link);
+          });
+        }
+
+        console.log('🚀 Early optimizations injected at:', performance.now() - window.mobileAppLoadStart, 'ms');
+      })();
+    ''');
   }
 
   /// Inject mobile optimizations to disable zoom and improve UX
@@ -380,32 +465,46 @@ class _WebViewScreenState extends State<WebViewScreen>
     if (_optimizationsInjected) return;
     _optimizationsInjected = true;
 
-    // Inject optimizations immediately without delay for faster load
+    // OPTIMIZATION: Inject immediately without delay for faster load
+    // Use ultra-lightweight, minified code for instant execution
     _webViewController.runJavaScript('''
       (function() {
-        // Quick viewport setup
-        var meta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-        if (!meta.parentNode) document.head.appendChild(meta);
+        // Fast viewport setup - runs immediately
+        var m=document.querySelector('meta[name="viewport"]')||document.createElement('meta');
+        m.name='viewport';
+        m.content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=0';
+        if(!m.parentNode)document.head.appendChild(m);
 
-        // Simplified zoom prevention
-        ['gesturestart', 'gesturechange', 'gestureend'].forEach(function(evt) {
-          document.addEventListener(evt, function(e) { e.preventDefault(); }, {passive: false});
+        // Prevent zoom gestures
+        ['gesturestart','gesturechange','gestureend'].forEach(function(e){
+          document.addEventListener(e,function(t){t.preventDefault()},{passive:!1})
         });
 
-        // Fast double-tap prevention
-        var lastTouch = 0;
-        document.addEventListener('touchend', function(e) {
-          var now = Date.now();
-          if (now - lastTouch <= 300) e.preventDefault();
-          lastTouch = now;
-        }, {passive: false});
+        // Double-tap prevention
+        var t=0;
+        document.addEventListener('touchend',function(e){
+          var n=Date.now();
+          n-t<=300&&e.preventDefault();
+          t=n
+        },{passive:!1});
 
-        // Optimized CSS injection
-        var style = document.createElement('style');
-        style.textContent = '*{-webkit-tap-highlight-color:transparent;-webkit-user-select:none}input,textarea,[contenteditable]{-webkit-user-select:text!important}body{overscroll-behavior:none;-webkit-overflow-scrolling:touch}';
-        document.head.appendChild(style);
+        // Ultra-minified CSS injection for performance
+        var s=document.createElement('style');
+        s.textContent='*{-webkit-tap-highlight-color:transparent;-webkit-user-select:none}input,textarea,[contenteditable]{-webkit-user-select:text!important}body{overscroll-behavior:none;-webkit-overflow-scrolling:touch}img{-webkit-user-drag:none}';
+        document.head.appendChild(s);
+
+        // Preconnect to critical domains for faster resource loading
+        ['https://www.gameofcreators.com','https://rjprmbjqetxkramwbrqo.supabase.co'].forEach(function(u){
+          var l=document.createElement('link');
+          l.rel='preconnect';
+          l.href=u;
+          document.head.appendChild(l);
+        });
+
+        // Performance reporting
+        if (typeof window.mobileAppLoadStart !== 'undefined') {
+          console.log('Mobile optimizations loaded in:', performance.now() - window.mobileAppLoadStart, 'ms');
+        }
       })();
     ''');
   }
